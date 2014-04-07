@@ -8,7 +8,7 @@ install
 
 Assuming go is installed:
 
-`$ go get github.com/jakecoffman/watch`
+`go get github.com/jakecoffman/watch`
 
 running
 ----------
@@ -17,5 +17,7 @@ running
 
 `$GOPATH/bin/watch`
 
-if `$GOPATH/bin` is in your `$PATH` just run `watch`
+or if `$GOPATH/bin` is in your `$PATH`, simply: 
+
+`watch`
 
