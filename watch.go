@@ -10,7 +10,7 @@ import (
 )
 
 func main() {
-	log.Println("Press Ctl-C to end test_watcher\n")
+	log.Println("Press Ctl-C to stop watching\n")
 
 	watcher, err := fsnotify.NewWatcher()
 	if err != nil {
