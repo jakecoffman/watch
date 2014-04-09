@@ -1,7 +1,7 @@
 watch
 =====
 
-watches the current directory for changes, then executes `go test`
+watches the current directory for changes, then executes a command
 
 install
 ----------
@@ -21,3 +21,6 @@ or if `$GOPATH/bin` is in your `$PATH`, simply:
 
 `watch`
 
+By default, watch will run `go test`. To run something else, give it arguments:
+
+`watch go build`

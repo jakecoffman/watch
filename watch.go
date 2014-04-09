@@ -3,13 +3,17 @@ package main
 import (
 	"fmt"
 	"log"
+	"os"
 	"os/exec"
+	"strings"
 	"time"
 
 	"code.google.com/p/go.exp/fsnotify"
 )
 
 func main() {
+	cmd := parse()
+	log.Printf("Running %v", strings.Join(cmd, " "))
 	log.Println("Press Ctl-C to stop watching\n")
 
 	watcher, err := fsnotify.NewWatcher()
@@ -18,21 +22,9 @@ func main() {
 	}
 
 	// run once when first starting up
-	run()
+	run(cmd)
 
-	go func() {
-		for {
-			select {
-			case <-watcher.Event:
-				// watcher's events sometimes fire rapidly, so introduce a 100ms delay before running
-				time.Sleep(time.Millisecond * 100)
-				drainChan(watcher.Event)
-				run()
-			case err := <-watcher.Error:
-				log.Fatal("error:", err)
-			}
-		}
-	}()
+	go watcherHandler(watcher, cmd)
 
 	// watches cwd
 	err = watcher.Watch(".")
@@ -44,12 +36,22 @@ func main() {
 	<-make(chan bool)
 }
 
+func parse() []string {
+	var cmd []string
+	if len(os.Args) == 1 {
+		cmd = []string{"go", "test"}
+	} else {
+		cmd = os.Args[1:]
+	}
+	return cmd
+}
+
 // do a run of the command (hard coded to `go test` for now)
-func run() {
+func run(cmd []string) {
 	log.Println("Starting run")
 
-	cmd := exec.Command("go", "test")
-	out, err := cmd.CombinedOutput()
+	c := exec.Command(cmd[0], cmd[1:]...)
+	out, err := c.CombinedOutput()
 	fmt.Print(string(out))
 
 	if err != nil {
@@ -66,6 +68,20 @@ func drainChan(c chan *fsnotify.FileEvent) {
 		case <-c:
 		default:
 			return
+		}
+	}
+}
+
+func watcherHandler(watcher *fsnotify.Watcher, cmd []string) {
+	for {
+		select {
+		case <-watcher.Event:
+			// watcher's events sometimes fire rapidly, so introduce a 100ms delay before running
+			time.Sleep(time.Millisecond * 100)
+			drainChan(watcher.Event)
+			run(cmd)
+		case err := <-watcher.Error:
+			log.Fatal("error:", err)
 		}
 	}
 }
