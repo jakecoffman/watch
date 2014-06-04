@@ -13,14 +13,8 @@ Assuming go is installed:
 running
 ----------
 
-`cd` into your desired directory and run:
+`cd` into your desired directory and run: `$GOPATH/bin/watch`
 
-`$GOPATH/bin/watch`
+or if `$GOPATH/bin` is in your `$PATH`, simply: `watch`
 
-or if `$GOPATH/bin` is in your `$PATH`, simply: 
-
-`watch`
-
-By default, watch will run `go test`. To run something else, give it arguments:
-
-`watch go build`
+By default, watch will run `go test`. To run something else, give it arguments: `watch go build`
