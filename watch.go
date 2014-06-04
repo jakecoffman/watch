@@ -24,18 +24,20 @@ func main() {
 	// run once when first starting up
 	run(cmd)
 
+	// kick off the goroutine that runs the command when the watcher fires
 	go watcherHandler(watcher, cmd)
 
-	// watches cwd
+	// watches cwd, could be configurable
 	err = watcher.Watch(".")
 	if err != nil {
 		log.Fatal(err)
 	}
 
-	// block forever (or until a log.Fatal)
+	// block foreverish
 	<-make(chan bool)
 }
 
+// parses command line arguments (rudimentarily)
 func parse() []string {
 	var cmd []string
 	if len(os.Args) == 1 {
@@ -46,9 +48,9 @@ func parse() []string {
 	return cmd
 }
 
-// do a run of the command (hard coded to `go test` for now)
+// do a run of the command
 func run(cmd []string) {
-	log.Println("Starting run")
+	log.Println(cmd, "************************************************")
 
 	c := exec.Command(cmd[0], cmd[1:]...)
 	out, err := c.CombinedOutput()
@@ -61,25 +63,31 @@ func run(cmd []string) {
 	}
 }
 
-// takes a channel and reads everything from it until it is empty and then returns
-func drainChan(c chan *fsnotify.FileEvent) {
+// takes a channel and reads everything from it for a given amount of time
+func debounce(c chan *fsnotify.FileEvent, debounceTime time.Duration) {
+	timeout := make(chan bool)
+	defer func() { close(timeout) }()
+	go func() {
+		time.Sleep(debounceTime)
+		timeout <- true
+	}()
 	for {
 		select {
 		case <-c:
-		default:
+			// do nothing
+		case <-timeout:
 			return
 		}
 	}
 }
 
+// handles watcher events by running the given command
 func watcherHandler(watcher *fsnotify.Watcher, cmd []string) {
 	for {
 		select {
 		case <-watcher.Event:
-			// watcher's events sometimes fire rapidly, so introduce a 100ms delay before running
-			time.Sleep(time.Millisecond * 100)
-			drainChan(watcher.Event)
 			run(cmd)
+			debounce(watcher.Event, 100*time.Millisecond)
 		case err := <-watcher.Error:
 			log.Fatal("error:", err)
 		}
