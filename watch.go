@@ -12,7 +12,7 @@ import (
 )
 
 func main() {
-	cmd := parse()
+	cmd := parse(os.Args)
 	log.Printf("Running %v", strings.Join(cmd, " "))
 	log.Println("Press Ctl-C to stop watching\n")
 
@@ -38,12 +38,12 @@ func main() {
 }
 
 // parses command line arguments (rudimentarily)
-func parse() []string {
+func parse(args []string) []string {
 	var cmd []string
-	if len(os.Args) == 1 {
+	if len(args) == 1 {
 		cmd = []string{"go", "test"}
 	} else {
-		cmd = os.Args[1:]
+		cmd = args[1:]
 	}
 	return cmd
 }
