@@ -1,6 +1,11 @@
 package main
 
-import "testing"
+import (
+	"testing"
+	"time"
+
+	"code.google.com/p/go.exp/fsnotify"
+)
 
 var parseTests = []struct {
 	in  []string
@@ -19,5 +24,19 @@ func Test_parse(t *testing.T) {
 				t.Fatalf("%d. parse(%q) => %q, want %q", i, tt.in, out, tt.out)
 			}
 		}
+	}
+}
+
+func Test_debounce(t *testing.T) {
+	c := make(chan *fsnotify.FileEvent)
+	go func() {
+		c <- &fsnotify.FileEvent{}
+		c <- &fsnotify.FileEvent{}
+	}()
+	debounce(c, 100*time.Millisecond)
+	select {
+	case <-c:
+		t.Fatal("Debounce did not drain the channel")
+	default:
 	}
 }
