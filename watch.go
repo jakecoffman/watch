@@ -25,7 +25,7 @@ func main() {
 	run(cmd)
 
 	// kick off the goroutine that runs the command when the watcher fires
-	go watcherHandler(watcher, cmd)
+	go watcherHandler(watcher, cmd, log.Fatal)
 
 	// watches cwd, could be configurable
 	err = watcher.Watch(".")
@@ -33,12 +33,12 @@ func main() {
 		log.Fatal(err)
 	}
 
-	// block foreverish
+	// block forever-ish
 	<-make(chan bool)
 }
 
-// parses command line arguments (rudimentarily)
-func parse(args []string) []string {
+// parses command line arguments (rudimentary)
+var parse = func(args []string) []string {
 	var cmd []string
 	if len(args) == 1 {
 		cmd = []string{"go", "test"}
@@ -49,7 +49,7 @@ func parse(args []string) []string {
 }
 
 // do a run of the command
-func run(cmd []string) {
+var run = func(cmd []string) {
 	log.Println(cmd, "************************************************")
 
 	c := exec.Command(cmd[0], cmd[1:]...)
@@ -64,7 +64,7 @@ func run(cmd []string) {
 }
 
 // takes a channel and reads everything from it for a given amount of time
-func debounce(c chan *fsnotify.FileEvent, debounceTime time.Duration) {
+var debounce = func(c chan *fsnotify.FileEvent, debounceTime time.Duration) {
 	timeout := make(chan bool)
 	defer func() { close(timeout) }()
 	go func() {
@@ -82,14 +82,14 @@ func debounce(c chan *fsnotify.FileEvent, debounceTime time.Duration) {
 }
 
 // handles watcher events by running the given command
-func watcherHandler(watcher *fsnotify.Watcher, cmd []string) {
+var watcherHandler = func(watcher *fsnotify.Watcher, cmd []string, fatal func(v ...interface{})) {
 	for {
 		select {
 		case <-watcher.Event:
 			run(cmd)
 			debounce(watcher.Event, 100*time.Millisecond)
 		case err := <-watcher.Error:
-			log.Fatal("error:", err)
+			fatal("error:", err)
 		}
 	}
 }
