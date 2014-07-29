@@ -21,7 +21,7 @@ func main() {
 		log.Fatal(err)
 	}
 
-	// run once when first starting up
+	// run once when first starting up.
 	run(cmd)
 
 	// kick off the goroutine that runs the command when the watcher fires
