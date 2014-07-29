@@ -1,6 +1,8 @@
 watch
 =====
 
+[![Build Status](https://secure.travis-ci.org/jakecoffman/watch.png?branch=master)](http://travis-ci.org/jakecoffman/watch)
+
 watches the current directory for changes, then executes a command
 
 install
