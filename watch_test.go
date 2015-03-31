@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"code.google.com/p/go.exp/fsnotify"
+	"gopkg.in/fsnotify.v1"
 )
 
 var parseTests = []struct {
@@ -29,10 +29,10 @@ func Test_parse(t *testing.T) {
 }
 
 func Test_debounce(t *testing.T) {
-	c := make(chan *fsnotify.FileEvent)
+	c := make(chan fsnotify.Event)
 	go func() {
-		c <- &fsnotify.FileEvent{}
-		c <- &fsnotify.FileEvent{}
+		c <- fsnotify.Event{}
+		c <- fsnotify.Event{}
 	}()
 	debounce(c, 100*time.Millisecond)
 	select {
@@ -52,8 +52,8 @@ func Test_watcherHandler(t *testing.T) {
 	}()
 
 	watcher := &fsnotify.Watcher{
-		Event: make(chan *fsnotify.FileEvent),
-		Error: make(chan error),
+		Events: make(chan fsnotify.Event),
+		Errors: make(chan error),
 	}
 
 	success := make(chan bool)
@@ -70,10 +70,10 @@ func Test_watcherHandler(t *testing.T) {
 		}
 		success <- true
 	}
-	debounce = func(c chan *fsnotify.FileEvent, debounceTime time.Duration) {
+	debounce = func(c chan fsnotify.Event, debounceTime time.Duration) {
 		success <- true
 	}
-	watcher.Event <- &fsnotify.FileEvent{Name: "TEST"}
+	watcher.Events <- fsnotify.Event{Name: "TEST"}
 	timeout := make(chan bool)
 
 	go func() {
@@ -92,7 +92,7 @@ func Test_watcherHandler(t *testing.T) {
 	}
 
 	// watcher errors log
-	watcher.Error <- errors.New("Error!")
+	watcher.Errors <- errors.New("Error!")
 	go func() {
 		time.Sleep(1 * time.Second)
 	}()

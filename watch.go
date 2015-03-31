@@ -8,7 +8,9 @@ import (
 	"strings"
 	"time"
 
-	"code.google.com/p/go.exp/fsnotify"
+	"gopkg.in/fsnotify.v1"
+	"path/filepath"
+	"bufio"
 )
 
 func main() {
@@ -27,8 +29,47 @@ func main() {
 	// kick off the goroutine that runs the command when the watcher fires
 	go watcherHandler(watcher, cmd, log.Fatal)
 
-	// watches cwd, could be configurable
-	err = watcher.Watch(".")
+	// watches cwd and subdirs, could be configurable
+	gitignore, err := os.Open(".gitignore")
+	ignores := map[string]struct{}{".git":struct{}{}}
+	if err != nil {
+		fmt.Println(".gitignore not found")
+	} else {
+		defer gitignore.Close()
+		scanner := bufio.NewScanner(gitignore)
+		for scanner.Scan() {
+			line := scanner.Text();
+			line = strings.TrimSpace(line)
+			line = strings.TrimPrefix(line, "/")
+			if line != "" && !strings.HasPrefix(line, "#") {
+				ignores[line] = struct{}{}
+			}
+		}
+		if err = scanner.Err(); err != nil {
+			log.Fatal(err)
+		}
+	}
+
+	err = watcher.Add(".")
+	filepath.Walk(".", func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			log.Fatal(err)
+			return err
+		}
+		if !info.IsDir() {
+			return nil
+		}
+		for ignorePath, _ := range ignores {
+			if strings.HasPrefix(path, ignorePath) {
+				if path == ignorePath {
+					fmt.Println("Ignoring", path, "due to", ignorePath)
+				}
+				return nil
+			}
+		}
+		return watcher.Add(path)
+	})
+
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -64,7 +105,7 @@ var run = func(cmd []string) {
 }
 
 // takes a channel and reads everything from it for a given amount of time
-var debounce = func(c chan *fsnotify.FileEvent, debounceTime time.Duration) {
+var debounce = func(c chan fsnotify.Event, debounceTime time.Duration) {
 	timeout := make(chan bool)
 	defer func() { close(timeout) }()
 	go func() {
@@ -85,10 +126,11 @@ var debounce = func(c chan *fsnotify.FileEvent, debounceTime time.Duration) {
 var watcherHandler = func(watcher *fsnotify.Watcher, cmd []string, fatal func(v ...interface{})) {
 	for {
 		select {
-		case <-watcher.Event:
+		case event := <-watcher.Events:
+			fmt.Println("Firing due to ", event.Name)
 			run(cmd)
-			debounce(watcher.Event, 100*time.Millisecond)
-		case err := <-watcher.Error:
+			debounce(watcher.Events, 500*time.Millisecond)
+		case err := <-watcher.Errors:
 			fatal("error:", err)
 		}
 	}
