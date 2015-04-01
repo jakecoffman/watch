@@ -25,57 +25,9 @@ func main() {
 
 	// run once when first starting up.
 	run(cmd)
-
-	// kick off the goroutine that runs the command when the watcher fires
-	go watcherHandler(watcher, cmd, log.Fatal)
-
-	// watches cwd and subdirs, could be configurable
-	gitignore, err := os.Open(".gitignore")
-	ignores := map[string]struct{}{".git":struct{}{}}
-	if err != nil {
-		fmt.Println(".gitignore not found")
-	} else {
-		defer gitignore.Close()
-		scanner := bufio.NewScanner(gitignore)
-		for scanner.Scan() {
-			line := scanner.Text();
-			line = strings.TrimSpace(line)
-			line = strings.TrimPrefix(line, "/")
-			if line != "" && !strings.HasPrefix(line, "#") {
-				ignores[line] = struct{}{}
-			}
-		}
-		if err = scanner.Err(); err != nil {
-			log.Fatal(err)
-		}
-	}
-
-	err = watcher.Add(".")
-	filepath.Walk(".", func(path string, info os.FileInfo, err error) error {
-		if err != nil {
-			log.Fatal(err)
-			return err
-		}
-		if !info.IsDir() {
-			return nil
-		}
-		for ignorePath, _ := range ignores {
-			if strings.HasPrefix(path, ignorePath) {
-				if path == ignorePath {
-					fmt.Println("Ignoring", path, "due to", ignorePath)
-				}
-				return nil
-			}
-		}
-		return watcher.Add(path)
-	})
-
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	// block forever-ish
-	<-make(chan bool)
+	ignores := getIgnores()
+	addPathsToWatcher(watcher, ignores)
+	watcherHandler(watcher, cmd, log.Fatal)
 }
 
 // parses command line arguments (rudimentary)
@@ -126,12 +78,57 @@ var debounce = func(c chan fsnotify.Event, debounceTime time.Duration) {
 var watcherHandler = func(watcher *fsnotify.Watcher, cmd []string, fatal func(v ...interface{})) {
 	for {
 		select {
-		case event := <-watcher.Events:
-			fmt.Println("Firing due to ", event.Name)
+		case <-watcher.Events:
 			run(cmd)
 			debounce(watcher.Events, 500*time.Millisecond)
 		case err := <-watcher.Errors:
 			fatal("error:", err)
 		}
 	}
+}
+
+func getIgnores() map[string]struct{} {
+	gitignore, err := os.Open(".gitignore")
+	ignores := map[string]struct{}{".git":struct{}{}}
+	if err != nil {
+		fmt.Println(".gitignore not found")
+	} else {
+		defer gitignore.Close()
+		scanner := bufio.NewScanner(gitignore)
+		for scanner.Scan() {
+			line := scanner.Text();
+			line = strings.TrimSpace(line)
+			line = strings.TrimPrefix(line, "/")
+			if line != "" && !strings.HasPrefix(line, "#") {
+				ignores[line] = struct{}{}
+			}
+		}
+		if err = scanner.Err(); err != nil {
+			log.Fatal(err)
+		}
+	}
+	return ignores
+}
+
+func addPathsToWatcher(watcher *fsnotify.Watcher, ignores map[string]struct{}) error {
+	err := watcher.Add(".")
+	if err != nil {
+		return err
+	}
+	err = filepath.Walk(".", func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			log.Fatal(err)
+			return err
+		}
+		if !info.IsDir() {
+			return nil
+		}
+		for ignorePath, _ := range ignores {
+			if strings.HasPrefix(path, ignorePath) {
+				return nil
+			}
+		}
+		return watcher.Add(path)
+	})
+	return err
 }
