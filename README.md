@@ -3,7 +3,9 @@ watch
 
 [![Build Status](https://secure.travis-ci.org/jakecoffman/watch.png?branch=master)](http://travis-ci.org/jakecoffman/watch)
 
-watches the current directory for changes, then executes a command
+Watches the current directory and subdirectories for changes, then executes a command.
+
+Honors the .gitignore file so it won't fire when .git files change.
 
 install
 ----------
