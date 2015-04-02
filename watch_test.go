@@ -1,11 +1,13 @@
 package main
 
 import (
-	"errors"
 	"testing"
 	"time"
-
 	"gopkg.in/fsnotify.v1"
+	"errors"
+	"bytes"
+	"reflect"
+	"os/exec"
 )
 
 var parseTests = []struct {
@@ -15,6 +17,18 @@ var parseTests = []struct {
 	{[]string{"cmd"}, []string{"go", "test"}},
 	{[]string{"cmd", "arg"}, []string{"arg"}},
 	{[]string{"cmd", "arg", "arg"}, []string{"arg", "arg"}},
+}
+
+func Test_Integration(t *testing.T) {
+	var c *exec.Cmd
+	go func() {
+		c = exec.Command("go", "run", "watch.go", "touch", "integrationtest")
+		_, err := c.CombinedOutput()
+		if err != nil {
+			t.Fatal(err)
+		}
+	}()
+	time.Sleep(1*time.Second)
 }
 
 func Test_parse(t *testing.T) {
@@ -43,65 +57,74 @@ func Test_debounce(t *testing.T) {
 }
 
 func Test_watcherHandler(t *testing.T) {
-	// prepare for mocking
-	runTemp := run
-	debounceTemp := debounce
+	// mock run and debounce
+	mockRunCalled := false
+	mockDebounceCalled := false
+	mockRun := func(cmd []string) {
+		mockRunCalled = true
+	}
+	mockDebounce := func(c <-chan fsnotify.Event, debounceTime time.Duration) {
+		mockDebounceCalled = true
+	}
+	runBackup := run
+	debounceBackup := debounce
+	defer func(){
+		run = runBackup
+		debounce = debounceBackup
+	}()
+	run = mockRun
+	debounce = mockDebounce
+
+	errorChannel := make(chan error)
+	eventChannel := make(chan fsnotify.Event)
 	defer func() {
-		run = runTemp
-		debounce = debounceTemp
+		close(errorChannel)
+		close(eventChannel)
 	}()
 
-	watcher := &fsnotify.Watcher{
-		Events: make(chan fsnotify.Event),
-		Errors: make(chan error),
-	}
-
-	success := make(chan bool)
-	fatal := func(v ...interface{}) { success <- true }
+	semaphore := make(chan struct{})
 	go func() {
-		watcherHandler(watcher, []string{"cmd"}, fatal)
+		watcherHandler(eventChannel, errorChannel, []string{"command"})
+		close(semaphore)
 	}()
 
-	// test that when we get an event, the expected functions are called
-	run = func(cmd []string) {
-		if cmd[0] != "cmd" {
-			success <- false
-			t.Fatal("Incorrect parameter to run: ", cmd)
-		}
-		success <- true
-	}
-	debounce = func(c chan fsnotify.Event, debounceTime time.Duration) {
-		success <- true
-	}
-	watcher.Events <- fsnotify.Event{Name: "TEST"}
-	timeout := make(chan bool)
+	errorChannel <- errors.New("not a real error")
+	<-semaphore
 
+	if mockRunCalled != false || mockDebounceCalled != false {
+		t.Error("error did not have the desired effect:", mockRunCalled, mockDebounceCalled)
+	}
+
+	hit := false
 	go func() {
-		time.Sleep(1 * time.Second)
+		watcherHandler(eventChannel, errorChannel, []string{"command"})
+		hit = true
 	}()
 
-	for i := 0; i < 2; i++ {
-		select {
-		case s := <-success:
-			if s != true {
-				t.Fatal("Received failure signal")
-			}
-		case <-timeout:
-			t.Fatal("Timed out while waiting for success signal")
-		}
+	eventChannel <- fsnotify.Event{}
+	time.Sleep(1*time.Second)
+
+	if hit != false || mockRunCalled != true || mockDebounceCalled != true {
+		t.Error("event did not have the desired effect:", mockRunCalled, mockDebounceCalled)
 	}
+}
 
-	// watcher errors log
-	watcher.Errors <- errors.New("Error!")
-	go func() {
-		time.Sleep(1 * time.Second)
-	}()
-	select {
-	case s := <-success:
-		if s != true {
-			t.Fatal("Received failure signal")
-		}
-	case <-timeout:
-		t.Fatal("Timed out while wainting for success signal")
+func Test_getIgnores(t *testing.T) {
+	test := `#comment
+/thing
+hello
+
+#commend
+hi
+`
+	expected := map[string]struct{}{
+		".git": struct{}{},
+		"thing": struct{}{},
+		"hello": struct{}{},
+		"hi": struct{}{},
+	}
+	ignores := getIgnores(bytes.NewBufferString(test))
+	if !reflect.DeepEqual(expected, ignores) {
+		t.Error("not equal:", ignores)
 	}
 }

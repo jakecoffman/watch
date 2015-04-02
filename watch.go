@@ -7,11 +7,13 @@ import (
 	"os/exec"
 	"strings"
 	"time"
-
 	"gopkg.in/fsnotify.v1"
 	"path/filepath"
 	"bufio"
+	"io"
 )
+
+const DEBOUNCE_TIME = 500*time.Millisecond
 
 func main() {
 	cmd := parse(os.Args)
@@ -25,9 +27,19 @@ func main() {
 
 	// run once when first starting up.
 	run(cmd)
-	ignores := getIgnores()
+
+	// attempt to read from .gitignore
+	gitignore, err := os.Open(".gitignore")
+	var ignores map[string]struct{}
+	if err != nil {
+		fmt.Println(".gitignore not found")
+	} else {
+		defer gitignore.Close()
+		ignores = getIgnores(gitignore)
+	}
+
 	addPathsToWatcher(watcher, ignores)
-	watcherHandler(watcher, cmd, log.Fatal)
+	watcherHandler(watcher.Events, watcher.Errors, cmd)
 }
 
 // parses command line arguments (rudimentary)
@@ -57,7 +69,7 @@ var run = func(cmd []string) {
 }
 
 // takes a channel and reads everything from it for a given amount of time
-var debounce = func(c chan fsnotify.Event, debounceTime time.Duration) {
+var debounce = func(c <-chan fsnotify.Event, debounceTime time.Duration) {
 	timeout := make(chan bool)
 	defer func() { close(timeout) }()
 	go func() {
@@ -75,42 +87,41 @@ var debounce = func(c chan fsnotify.Event, debounceTime time.Duration) {
 }
 
 // handles watcher events by running the given command
-var watcherHandler = func(watcher *fsnotify.Watcher, cmd []string, fatal func(v ...interface{})) {
+var watcherHandler = func(events <-chan fsnotify.Event, errors <-chan error, cmd []string) {
 	for {
 		select {
-		case <-watcher.Events:
+		case <-events:
 			run(cmd)
-			debounce(watcher.Events, 500*time.Millisecond)
-		case err := <-watcher.Errors:
-			fatal("error:", err)
+			debounce(events, DEBOUNCE_TIME)
+		case err := <-errors:
+			log.Println("Error:", err)
+			return
 		}
 	}
 }
 
-func getIgnores() map[string]struct{} {
-	gitignore, err := os.Open(".gitignore")
+func getIgnores(gitignore io.Reader) map[string]struct{} {
 	ignores := map[string]struct{}{".git":struct{}{}}
-	if err != nil {
-		fmt.Println(".gitignore not found")
-	} else {
-		defer gitignore.Close()
-		scanner := bufio.NewScanner(gitignore)
-		for scanner.Scan() {
-			line := scanner.Text();
-			line = strings.TrimSpace(line)
-			line = strings.TrimPrefix(line, "/")
-			if line != "" && !strings.HasPrefix(line, "#") {
-				ignores[line] = struct{}{}
-			}
+	scanner := bufio.NewScanner(gitignore)
+	for scanner.Scan() {
+		line := scanner.Text();
+		line = strings.TrimSpace(line)
+		line = strings.TrimPrefix(line, "/")
+		if line != "" && !strings.HasPrefix(line, "#") {
+			ignores[line] = struct{}{}
 		}
-		if err = scanner.Err(); err != nil {
-			log.Fatal(err)
-		}
+	}
+	if err := scanner.Err(); err != nil {
+		log.Fatal(err)
 	}
 	return ignores
 }
 
-func addPathsToWatcher(watcher *fsnotify.Watcher, ignores map[string]struct{}) error {
+type watcherLike interface {
+	Add(string) error
+}
+
+func addPathsToWatcher(watcher watcherLike, ignores map[string]struct{}) error {
 	err := watcher.Add(".")
 	if err != nil {
 		return err
